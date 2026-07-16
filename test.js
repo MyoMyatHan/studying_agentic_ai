@@ -1,4 +1,6 @@
 import "dotenv/config";
+import { createInterface } from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
 import { GoogleGenAI } from "@google/genai";
 
 const apiKey = process.env.GEMINI_API_KEY;
@@ -31,16 +33,26 @@ async function chat(messages) {
 
 async function main() {
   const messages = [];
+  const rl = createInterface({ input, output });
 
-  addUserMessage(messages, "Define mosquito in one sentence.");
-  const firstAnswer = await chat(messages);
-  console.log("First answer:", firstAnswer);
+  console.log("Chatbot started. Type \"exit\" to quit.");
 
-  addAssistantMessage(messages, firstAnswer);
-  addUserMessage(messages, "Write another sentence and mention common mosquito types.");
+  while (true) {
+    const userInput = await rl.question("You: ");
 
-  const finalAnswer = await chat(messages);
-  console.log("\nFinal answer:", finalAnswer);
+    if (userInput.trim().toLowerCase() === "exit") {
+      break;
+    }
+
+    addUserMessage(messages, userInput);
+
+    const answer = await chat(messages);
+    addAssistantMessage(messages, answer);
+
+    console.log(`Bot: ${answer}\n`);
+  }
+
+  rl.close();
 }
 
 main().catch(console.error);
