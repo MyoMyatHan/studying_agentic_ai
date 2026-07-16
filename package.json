@@ -4,7 +4,10 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "lesson:01": "node lessons/01-gemini-chat.js",
+    "lesson:02": "node lessons/02-claude-basic.js",
+    "start": "node lessons/01-gemini-chat.js"
   },
   "keywords": [],
   "author": "",
