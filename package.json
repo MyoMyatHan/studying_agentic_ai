@@ -6,7 +6,7 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "lesson:01": "node lessons/01-gemini-chat.js",
-    "lesson:02": "node lessons/02-claude-basic.js",
+    "lesson:02": "node lessons/02-system-prompt.js",
     "start": "node lessons/01-gemini-chat.js"
   },
   "keywords": [],
