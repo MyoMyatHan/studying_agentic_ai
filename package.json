@@ -7,6 +7,9 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "lesson:01": "node lessons/01-gemini-chat.js",
     "lesson:02": "node lessons/02-system-prompt.js",
+    "lesson:03": "node lessons/03-temperature.js",
+    "lesson:04": "node lessons/04-response-streaming.js",
+    "lesson:05": "node lessons/05-structured-data.js",
     "start": "node lessons/01-gemini-chat.js"
   },
   "keywords": [],
