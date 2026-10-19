@@ -66,7 +66,13 @@ test("comparison uses the same inputs and never exceeds configured concurrency",
   assert.deepEqual(baseline.results.map((item) => item.inputs), dataset);
   assert.deepEqual(improved.results.map((item) => item.inputs), dataset);
   assert.deepEqual(baseline.results.map((item) => item.case), [1, 2, 3]);
-  assert.ok(improved.results.every((item, index) => item.prompt.startsWith(baseline.results[index].prompt)));
+  for (const [index, item] of improved.results.entries()) {
+    const baselineLines = baseline.results[index].prompt.split("\n");
+    const improvedLines = item.prompt.split("\n");
+    assert.equal(baselineLines[0], "What should this person eat?");
+    assert.equal(improvedLines[0], "Generate a one-day meal plan for an athlete that meets their dietary restrictions.");
+    assert.deepEqual(improvedLines.slice(1), baselineLines.slice(1), "Only the opening line should change");
+  }
 });
 
 test("invalid grades are rejected and cannot inflate a score", () => {
@@ -108,13 +114,14 @@ test("HTML report escapes model content and labels incomplete comparisons", () =
     results: [{ case: 1, inputs: { goal: attack }, prompt: attack, answer: attack, status: "error", error: attack }],
   };
   const html = buildHtmlReport({
-    createdAt: "test", model: "fake", criteria, settings: {},
+    createdAt: "test", model: "fake", criteria, settings: {}, experiment: { technique: attack },
     baseline: evaluation, improved: evaluation, delta: null,
   });
   assert.ok(!html.includes("<script>"));
   assert.ok(html.includes("&lt;script&gt;"));
   assert.match(html, /unavailable \(incomplete evaluation\)/);
   assert.match(html, /Failed/);
+  assert.match(html, /Experiment, fixed rubric, and run settings/);
 });
 
 test("CLI preview needs no key, and CLI errors return failing exit codes", () => {
@@ -126,6 +133,8 @@ test("CLI preview needs no key, and CLI errors return failing exit codes", () =>
   assert.equal(preview.status, 0, preview.stderr);
   assert.match(preview.stdout, /BASELINE PROMPT/);
   assert.match(preview.stdout, /IMPROVED PROMPT/);
+  assert.match(preview.stdout, /Technique: Being clear and direct/);
+  assert.match(preview.stdout, /Generate a one-day meal plan for an athlete that meets their dietary restrictions\./);
   assert.match(preview.stdout, /no scores were generated/);
   const missingKey = run();
   assert.equal(missingKey.status, 1);

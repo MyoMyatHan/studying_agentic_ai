@@ -7,6 +7,12 @@ import { GoogleGenAI } from "@google/genai";
 const model = "gemini-flash-latest";
 const settings = { numCases: 3, maxConcurrentTasks: 3 };
 const outputDirectory = resolve("output/lesson-07");
+const experiment = {
+  technique: "Being clear and direct",
+  change: "Replace only the opening line; keep the athlete inputs and grading rubric unchanged.",
+  baselineOpening: "What should this person eat?",
+  improvedOpening: "Generate a one-day meal plan for an athlete that meets their dietary restrictions.",
+};
 
 // Freeze these criteria before comparing prompts. Each contributes 0-2 points.
 export const criteria = {
@@ -53,8 +59,8 @@ const gradeSchema = {
   additionalProperties: false,
 };
 
-export function buildInitialPrompt(inputs) {
-  return `What should this person eat?
+function buildMealPlanPrompt(openingLine, inputs) {
+  return `${openingLine}
 
 - Height: ${inputs.height} cm
 - Weight: ${inputs.weight} kg
@@ -62,19 +68,13 @@ export function buildInitialPrompt(inputs) {
 - Dietary restrictions: ${inputs.restrictions}`;
 }
 
-export function buildImprovedPrompt(inputs) {
-  // First experiment: add explicit requirements to the same starting prompt.
-  return `${buildInitialPrompt(inputs)}
+export function buildInitialPrompt(inputs) {
+  return buildMealPlanPrompt(experiment.baselineOpening, inputs);
+}
 
-Write a compact, concise one-day meal plan for this athlete.
-Include:
-- Meals and snacks with exact foods, portions with units, and approximate times.
-- An estimated daily calorie total in kcal.
-- Daily protein, carbohydrate, and fat totals in grams.
-- A brief explanation connecting the plan to the supplied inputs and goal.
-Respect all dietary restrictions, including ingredients in mixed foods.
-State assumptions for missing details such as training schedule or activity level.
-Label nutrition numbers as estimates and keep meal totals consistent with daily totals.`;
+export function buildImprovedPrompt(inputs) {
+  // Isolate this episode's technique: change the first line, not the prompt body.
+  return buildMealPlanPrompt(experiment.improvedOpening, inputs);
 }
 
 function requireText(value, label) {
@@ -233,10 +233,10 @@ export function buildHtmlReport(report) {
 <style>body{font:16px/1.6 system-ui,sans-serif;max-width:1000px;margin:40px auto;padding:0 20px;color:#172033;background:#f5f7fb}article{background:white;padding:20px;margin:20px 0;border:1px solid #ccd4e0;border-radius:8px}pre{white-space:pre-wrap;overflow-wrap:anywhere}summary{cursor:pointer}h1,h2{line-height:1.3}</style>
 </head><body><h1>Lesson 07: Prompt engineering</h1>
 <p>Generated: ${escapeHtml(report.createdAt)} | Model: ${escapeHtml(report.model)}</p>
-<p>Cycle: goal → initial prompt → evaluation → explicit requirements → re-evaluation.</p>
+<p>Cycle: goal → initial prompt → evaluation → clear, direct opening → re-evaluation.</p>
 <p>Average score change: ${report.delta === null ? "unavailable (incomplete evaluation)" : `${report.delta.toFixed(2)} points`}.</p>
 <p>Model scores are estimates of rubric compliance. Improvement is not guaranteed, and nutrition accuracy is not verified.</p>
-<details><summary>Fixed rubric and run settings</summary><pre>${escapeHtml(JSON.stringify({ criteria: report.criteria, settings: report.settings }, null, 2))}</pre></details>
+<details><summary>Experiment, fixed rubric, and run settings</summary><pre>${escapeHtml(JSON.stringify({ experiment: report.experiment, criteria: report.criteria, settings: report.settings }, null, 2))}</pre></details>
 ${sections}</body></html>`;
 }
 
@@ -252,7 +252,8 @@ async function main() {
     return;
   }
   console.log("Lesson 07: Prompt Engineering\n");
-  console.log("Goal -> initial prompt -> evaluate -> add requirements -> re-evaluate\n");
+  console.log("Goal -> initial prompt -> evaluate -> clarify the opening -> re-evaluate\n");
+  console.log(`Technique: ${experiment.technique}\n${experiment.change}\n`);
   if (flags.has("--preview")) {
     console.log("BASELINE PROMPT:\n", buildInitialPrompt(exampleInputs));
     console.log("\nIMPROVED PROMPT:\n", buildImprovedPrompt(exampleInputs));
@@ -287,7 +288,7 @@ async function main() {
   const improved = await evaluator.runEvaluation(dataset, buildImprovedPrompt);
   const delta = baseline.average !== null && improved.average !== null
     ? improved.average - baseline.average : null;
-  const report = { createdAt: new Date().toISOString(), model, settings, criteria, dataset, baseline, improved, delta };
+  const report = { createdAt: new Date().toISOString(), experiment, model, settings, criteria, dataset, baseline, improved, delta };
   const runDirectory = await mkdtemp(join(outputDirectory, "run-"));
   await writeFile(join(runDirectory, "results.json"), JSON.stringify(report, null, 2));
   await writeFile(join(runDirectory, "report.html"), buildHtmlReport(report));

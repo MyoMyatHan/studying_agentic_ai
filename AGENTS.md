@@ -37,6 +37,11 @@ The files on disk and package scripts are the source of truth as lessons are
 added. `package.json` currently names `index.js` as `main`, but that file does
 not exist; use the lesson scripts to run this project.
 
+Lesson 07's current experiment is "Being clear and direct": only the opening
+line differs between its baseline and improved prompt. Keep the athlete input
+body and grading rubric fixed when working on this experiment. The walkthrough
+and saved report metadata describe the technique being evaluated.
+
 ## Setup and commands
 
 - Use Node.js 20 or newer, as required by the locked `@google/genai` dependency.

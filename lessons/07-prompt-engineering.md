@@ -5,6 +5,32 @@ actually helps. This lesson adapts your course's meal-plan example to the
 repository's Node.js and Gemini setup. It implements a small `PromptEvaluator`
 locally; no external evaluator package or notebook is required.
 
+## Current episode: being clear and direct
+
+Lead with an instruction that tells the model what to do. Use a direct action
+verb, name the output, and state the main constraints in simple language.
+
+| Version | Opening line |
+| --- | --- |
+| Baseline | What should this person eat? |
+| Clear and direct | Generate a one-day meal plan for an athlete that meets their dietary restrictions. |
+
+The new opening names the action (**Generate**), the output (**meal plan**),
+and its scope (**one day**, **an athlete**, **dietary restrictions**).
+Both prompts then include exactly the same height, weight, goal, and
+restriction lines. The shared `buildMealPlanPrompt()` helper keeps that body
+identical, so the comparison isolates the opening-line change.
+
+The earlier version appended a detailed output checklist after the vague
+question. This episode replaces that experiment with a clear first line.
+The checklist is removed from the compared prompt; adding it now would test
+another technique at the same time. The grading rubric still checks calories,
+macros, portions/timing, restrictions, and fit, so some omissions may remain.
+
+Your course reports a change from 2.32 to 3.92 in its example. Those are course
+results, not measured results from this Gemini lesson. Run the evaluation to
+find out whether this change helps on your saved cases.
+
 ## The process to remember
 
 ```text
@@ -16,7 +42,7 @@ Write a basic prompt -> Generate answers -> Grade answers
                                                |
                                   Inspect scores and feedback
                                                |
-                              Change one prompt technique
+                              Clarify the opening line
                                                |
                                   Re-run the same evaluation
                                                |
@@ -69,11 +95,9 @@ not requests per minute; each worker generates then grades sequentially.
    a separate Gemini request to grade that answer against the fixed rubric.
    It validates grader JSON and computes the total locally. The grade includes
    short feedback you can act on.
-5. **Apply a technique.** `buildImprovedPrompt()` keeps the original inputs
-   and adds an explicit output checklist. The checklist requests foods,
-   portions, timing, calorie/macronutrient totals, goal alignment, assumptions,
-   and respect for restrictions. This is one technique, with several related
-   requirements. For finer experiments, add or change one checklist item.
+5. **Apply a technique.** `buildImprovedPrompt()` replaces only the vague
+   opening question with the direct instruction shown above. The athlete
+   inputs stay identical, and no checklist or other instructions are appended.
 6. **Re-evaluate fairly.** Both versions use the same saved cases, rubric,
    model, temperature (0), and token limit. Compare averages and individual
    cases, then inspect the actual answers and feedback.
@@ -91,7 +115,7 @@ the athlete inputs and candidate answer, without the baseline/improved label.
 output/lesson-07/
   dataset.json          # Reused on later runs
   run-<unique suffix>/  # A new directory for every completed comparison
-    results.json       # Inputs, exact prompts, answers, grades, errors, metadata
+    results.json       # Experiment, inputs, exact prompts, answers, grades, errors
     report.html        # Open in a browser to review both versions case by case
 ```
 
@@ -104,6 +128,12 @@ case's answer, five component scores, and feedback. If generation or grading
 fails for any case, its error is saved, that version has no average, and the
 comparison has no score change. The command exits with an error in that case.
 Earlier successful reports are preserved.
+
+The JSON report's `experiment` field records the technique, the change, and
+both opening lines. The HTML report includes the same metadata under
+"Experiment, fixed rubric, and run settings" so you can identify this episode
+when reviewing reports later. Reports from the earlier checklist experiment
+remain as they were; use the new run's paired comparison for this episode.
 
 ## How to interpret the results
 
@@ -121,7 +151,7 @@ Earlier successful reports are preserved.
 
 ## Small exercises for your next review
 
-1. Preview both prompts and predict which rubric items the baseline may miss.
+1. Preview both prompts and check that only their first lines differ.
 2. Run once, then inspect the lowest-scoring case in the HTML report.
 3. Change one instruction to address its feedback and run again.
 4. Record the change, old/new averages, and whether other cases got worse.
