@@ -10,6 +10,8 @@
     "lesson:03": "node lessons/03-temperature.js",
     "lesson:04": "node lessons/04-response-streaming.js",
     "lesson:05": "node lessons/05-structured-data.js",
+    "lesson:06": "node lessons/06-prompt-evaluation-dataset.js",
+    "lesson:07": "node lessons/07-prompt-engineering.js",
     "start": "node lessons/01-gemini-chat.js"
   },
   "keywords": [],

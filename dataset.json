@@ -1,0 +1,11 @@
+[
+  {
+    "task": "Write a Python function using boto3 that retrieves the IP addresses of all EC2 instances currently in the 'running' state within a specific AWS region."
+  },
+  {
+    "task": "Create an AWS IAM policy in JSON format that grants read-only access to a specific Amazon S3 bucket named 'company-reports' and denies access to all other S3 resources."
+  },
+  {
+    "task": "Write a regular expression (regex) to validate and extract the AWS Account ID (a 12-digit number) and the region name from a standard Amazon Resource Name (ARN) string."
+  }
+]
