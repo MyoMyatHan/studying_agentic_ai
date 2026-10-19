@@ -7,12 +7,14 @@ import { GoogleGenAI } from "@google/genai";
 const model = "gemini-flash-latest";
 const settings = { numCases: 3, maxConcurrentTasks: 3 };
 const outputDirectory = resolve("output/lesson-07");
-const experiment = {
-  technique: "Being clear and direct",
-  change: "Replace only the opening line; keep the athlete inputs and grading rubric unchanged.",
-  baselineOpening: "What should this person eat?",
-  improvedOpening: "Generate a one-day meal plan for an athlete that meets their dietary restrictions.",
-};
+const clearAndDirectOpening = "Generate a one-day meal plan for an athlete that meets their dietary restrictions.";
+const outputGuidelines = `Guidelines:
+1. Include an estimated daily calorie total in kcal; keep meal totals consistent with it.
+2. Show daily protein, fat, and carbohydrate totals in grams.
+3. Specify when to eat each meal and snack.
+4. Use only foods and ingredients that meet all dietary restrictions.
+5. List every food's portion size in grams.
+6. Keep the plan budget-friendly if a budget or affordability goal is mentioned; do not invent a budget.`;
 
 // Freeze these criteria before comparing prompts. Each contributes 0-2 points.
 export const criteria = {
@@ -59,22 +61,79 @@ const gradeSchema = {
   additionalProperties: false,
 };
 
-function buildMealPlanPrompt(openingLine, inputs) {
-  return `${openingLine}
+function buildAthleteInformation(inputs, encode = String) {
+  return `- Height: ${encode(inputs.height)} cm
+- Weight: ${encode(inputs.weight)} kg
+- Goal: ${encode(inputs.goal)}
+- Dietary restrictions: ${encode(inputs.restrictions)}`;
+}
 
-- Height: ${inputs.height} cm
-- Weight: ${inputs.weight} kg
-- Goal: ${inputs.goal}
-- Dietary restrictions: ${inputs.restrictions}`;
+function buildMealPlanPrompt(openingLine, inputs) {
+  return `${openingLine}\n\n${buildAthleteInformation(inputs)}`;
 }
 
 export function buildInitialPrompt(inputs) {
-  return buildMealPlanPrompt(experiment.baselineOpening, inputs);
+  return buildMealPlanPrompt("What should this person eat?", inputs);
+}
+
+export function buildClearAndDirectPrompt(inputs) {
+  return buildMealPlanPrompt(clearAndDirectOpening, inputs);
 }
 
 export function buildImprovedPrompt(inputs) {
-  // Isolate this episode's technique: change the first line, not the prompt body.
-  return buildMealPlanPrompt(experiment.improvedOpening, inputs);
+  // Specificity experiment: retain the direct opening and add output guidelines.
+  return `${buildClearAndDirectPrompt(inputs)}\n\n${outputGuidelines}`;
+}
+
+function escapeXmlText(value) {
+  return String(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+export function buildXmlPrompt(inputs) {
+  // XML experiment: group athlete data without changing the task or guidelines.
+  return `${clearAndDirectOpening}
+
+<athlete_information>
+${buildAthleteInformation(inputs, escapeXmlText)}
+</athlete_information>
+
+${outputGuidelines}`;
+}
+
+export function selectExperiment(name = "xml-tags") {
+  if (name === "clear-and-direct") {
+    return {
+      details: {
+        technique: "Being clear and direct",
+        change: "Replace only the opening line; keep the athlete inputs and grading rubric unchanged.",
+        baselineLabel: "Vague prompt",
+        improvedLabel: "Clear and direct prompt",
+      },
+      buildBaselinePrompt: buildInitialPrompt,
+      buildCandidatePrompt: buildClearAndDirectPrompt,
+    };
+  }
+  if (name === "being-specific") return {
+    details: {
+      technique: "Being specific: output quality guidelines",
+      change: "Keep the clear opening and athlete inputs; append six output guidelines. Keep the grading rubric unchanged.",
+      baselineLabel: "Clear and direct prompt",
+      improvedLabel: "Prompt with specific output guidelines",
+    },
+    buildBaselinePrompt: buildClearAndDirectPrompt,
+    buildCandidatePrompt: buildImprovedPrompt,
+  };
+  if (name === "xml-tags") return {
+    details: {
+      technique: "Structure with XML tags",
+      change: "Wrap athlete details in <athlete_information> tags; keep the opening, guidelines, inputs, and grading rubric unchanged.",
+      baselineLabel: "Prompt with specific output guidelines",
+      improvedLabel: "Specific prompt with XML athlete information",
+    },
+    buildBaselinePrompt: buildImprovedPrompt,
+    buildCandidatePrompt: buildXmlPrompt,
+  };
+  throw new Error(`Unknown experiment: ${name}.`);
 }
 
 function requireText(value, label) {
@@ -225,7 +284,10 @@ export function buildHtmlReport(report) {
 <h4>Scores and feedback</h4><pre>${escapeHtml(result.status === "ok"
     ? `${JSON.stringify(result.scores, null, 2)}\n\n${result.feedback}` : result.error)}</pre>
 </article>`).join("\n");
-    return `<section><h2>${name === "baseline" ? "Baseline" : "Improved prompt"}: ${evaluation.average === null ? "incomplete" : `${evaluation.average.toFixed(2)}/10`}</h2>${cases}</section>`;
+    const label = name === "baseline"
+      ? report.experiment?.baselineLabel ?? "Baseline"
+      : report.experiment?.improvedLabel ?? "Improved prompt";
+    return `<section><h2>${escapeHtml(label)}: ${evaluation.average === null ? "incomplete" : `${evaluation.average.toFixed(2)}/10`}</h2>${cases}</section>`;
   }).join("\n");
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
@@ -233,7 +295,8 @@ export function buildHtmlReport(report) {
 <style>body{font:16px/1.6 system-ui,sans-serif;max-width:1000px;margin:40px auto;padding:0 20px;color:#172033;background:#f5f7fb}article{background:white;padding:20px;margin:20px 0;border:1px solid #ccd4e0;border-radius:8px}pre{white-space:pre-wrap;overflow-wrap:anywhere}summary{cursor:pointer}h1,h2{line-height:1.3}</style>
 </head><body><h1>Lesson 07: Prompt engineering</h1>
 <p>Generated: ${escapeHtml(report.createdAt)} | Model: ${escapeHtml(report.model)}</p>
-<p>Cycle: goal → initial prompt → evaluation → clear, direct opening → re-evaluation.</p>
+<p>Technique: ${escapeHtml(report.experiment?.technique ?? "Prompt comparison")}</p>
+<p>Cycle: goal → baseline prompt → evaluation → apply one technique → re-evaluation.</p>
 <p>Average score change: ${report.delta === null ? "unavailable (incomplete evaluation)" : `${report.delta.toFixed(2)} points`}.</p>
 <p>Model scores are estimates of rubric compliance. Improvement is not guaranteed, and nutrition accuracy is not verified.</p>
 <details><summary>Experiment, fixed rubric, and run settings</summary><pre>${escapeHtml(JSON.stringify({ experiment: report.experiment, criteria: report.criteria, settings: report.settings }, null, 2))}</pre></details>
@@ -243,20 +306,26 @@ ${sections}</body></html>`;
 async function main() {
   const flags = new Set(process.argv.slice(2));
   for (const flag of flags) {
-    if (!["--preview", "--generate-dataset", "--help"].includes(flag)) {
+    if (!["--preview", "--generate-dataset", "--clear-and-direct", "--being-specific", "--xml-tags", "--help"].includes(flag)) {
       throw new Error(`Unknown option: ${flag}. Use --help.`);
     }
   }
   if (flags.has("--help")) {
-    console.log("Usage: npm run lesson:07 -- [--preview | --generate-dataset]\nDefault: reuse or generate test cases, compare prompts, and save JSON/HTML reports.\n--preview: show the example prompts and rubric without API calls or file writes.\n--generate-dataset: replace only this lesson's saved test cases before evaluation.");
+    console.log("Usage: npm run lesson:07 -- [--preview] [--generate-dataset] [--xml-tags | --being-specific | --clear-and-direct]\nDefault: compare the specific prompt with and without XML athlete-information tags, saving JSON/HTML reports.\n--preview: show the selected prompts and rubric without API calls or file writes.\n--generate-dataset: replace only this lesson's saved test cases before evaluation.\n--xml-tags: explicitly select the default XML-tag experiment.\n--being-specific: revisit the output-guidelines experiment.\n--clear-and-direct: revisit the vague-versus-direct opening experiment.");
     return;
   }
+  const experimentFlags = ["--xml-tags", "--being-specific", "--clear-and-direct"].filter((flag) => flags.has(flag));
+  if (experimentFlags.length > 1) {
+    throw new Error("Choose only one experiment: --xml-tags, --being-specific, or --clear-and-direct.");
+  }
+  const experimentName = experimentFlags[0]?.slice(2) ?? "xml-tags";
+  const { details: experiment, buildBaselinePrompt, buildCandidatePrompt } = selectExperiment(experimentName);
   console.log("Lesson 07: Prompt Engineering\n");
-  console.log("Goal -> initial prompt -> evaluate -> clarify the opening -> re-evaluate\n");
+  console.log("Goal -> baseline prompt -> evaluate -> apply one technique -> re-evaluate\n");
   console.log(`Technique: ${experiment.technique}\n${experiment.change}\n`);
   if (flags.has("--preview")) {
-    console.log("BASELINE PROMPT:\n", buildInitialPrompt(exampleInputs));
-    console.log("\nIMPROVED PROMPT:\n", buildImprovedPrompt(exampleInputs));
+    console.log(`BASELINE PROMPT (${experiment.baselineLabel}):\n`, buildBaselinePrompt(exampleInputs));
+    console.log(`\nIMPROVED PROMPT (${experiment.improvedLabel}):\n`, buildCandidatePrompt(exampleInputs));
     console.log("\nFIXED RUBRIC (0-2 each, 10 total):\n", criteria);
     console.log("\nPreview only: no scores were generated. Read lessons/07-prompt-engineering.md for the walkthrough.");
     return;
@@ -282,10 +351,10 @@ async function main() {
     await writeFile(datasetFile, JSON.stringify(dataset, null, 2));
   }
 
-  console.log("Evaluating the baseline prompt...");
-  const baseline = await evaluator.runEvaluation(dataset, buildInitialPrompt);
-  console.log("Evaluating the improved prompt against the SAME cases and rubric...");
-  const improved = await evaluator.runEvaluation(dataset, buildImprovedPrompt);
+  console.log(`Evaluating the baseline: ${experiment.baselineLabel}...`);
+  const baseline = await evaluator.runEvaluation(dataset, buildBaselinePrompt);
+  console.log(`Evaluating ${experiment.improvedLabel} against the SAME cases and rubric...`);
+  const improved = await evaluator.runEvaluation(dataset, buildCandidatePrompt);
   const delta = baseline.average !== null && improved.average !== null
     ? improved.average - baseline.average : null;
   const report = { createdAt: new Date().toISOString(), experiment, model, settings, criteria, dataset, baseline, improved, delta };
