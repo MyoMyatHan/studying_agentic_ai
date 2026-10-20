@@ -12,6 +12,7 @@
     "lesson:05": "node lessons/05-structured-data.js",
     "lesson:06": "node lessons/06-prompt-evaluation-dataset.js",
     "lesson:07": "node lessons/07-prompt-engineering.js",
+    "lesson:08": "node lessons/08-tool-functions-and-schemas.js",
     "start": "node lessons/01-gemini-chat.js"
   },
   "keywords": [],
