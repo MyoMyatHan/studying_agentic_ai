@@ -32,6 +32,48 @@ const exampleInputs = {
   restrictions: "Vegetarian; no peanuts",
 };
 
+// Teaching fixtures, not scored Gemini outputs or verified nutrition plans.
+export const promptExamples = [
+  {
+    inputs: {
+      height: 172, weight: 68,
+      goal: "Support moderate strength training on a limited budget",
+      restrictions: "Vegetarian; no peanuts",
+    },
+    output: `Assume moderate activity and an evening workout; nutrition values are illustrative estimates.
+07:30 Breakfast: dry oats 80 g, milk 250 g, banana 120 g.
+Estimated meal total: 615 kcal; protein 25 g, carbohydrate 95 g, fat 15 g.
+12:30 Lunch: cooked rice 250 g, cooked lentils 200 g, carrots 150 g, olive oil 10 g.
+Estimated meal total: 715 kcal; protein 30 g, carbohydrate 115 g, fat 15 g.
+16:00 Snack: plain yogurt 200 g, berries 100 g.
+Estimated meal total: 245 kcal; protein 20 g, carbohydrate 30 g, fat 5 g.
+19:00 Dinner: tofu 200 g, cooked rice 180 g, broccoli 150 g, olive oil 10 g.
+Estimated meal total: 725 kcal; protein 40 g, carbohydrate 85 g, fat 25 g.
+Daily estimated total: 2300 kcal; protein 115 g, carbohydrate 325 g, fat 60 g.
+Oats, rice, and lentils provide inexpensive staples. Dairy, lentils, and tofu offer vegetarian protein to support the stated training goal. No peanut ingredients are included.`,
+    explanation: "Demonstrates a compact schedule, gram portions, estimated daily calories and all three macros, stated assumptions, vegetarian ingredient choices, and budget awareness. The example teaches the response format; its food nutrient estimates are not verified.",
+  },
+  {
+    inputs: {
+      height: 188, weight: 92,
+      goal: "Support endurance training with limited meal preparation time",
+      restrictions: "Vegan; dairy-free; no peanuts or tree nuts",
+    },
+    output: `Assume moderate activity and an evening training session; nutrition values are illustrative estimates.
+07:00 Breakfast: dry oats 100 g, soy milk 300 g, berries 100 g.
+Estimated meal total: 635 kcal; protein 25 g, carbohydrate 100 g, fat 15 g.
+12:00 Lunch: cooked rice 300 g, cooked chickpeas 200 g, carrots 150 g, olive oil 10 g.
+Estimated meal total: 775 kcal; protein 30 g, carbohydrate 130 g, fat 15 g.
+16:00 Snack: plain soy yogurt 250 g, banana 120 g.
+Estimated meal total: 305 kcal; protein 15 g, carbohydrate 50 g, fat 5 g.
+19:00 Dinner: tofu 250 g, cooked potatoes 350 g, broccoli 200 g, olive oil 15 g.
+Estimated meal total: 760 kcal; protein 45 g, carbohydrate 100 g, fat 20 g.
+Daily estimated total: 2475 kcal; protein 115 g, carbohydrate 380 g, fat 55 g.
+Batch-cook the rice, chickpeas, and potatoes to reduce preparation time. Soy foods and chickpeas supply plant protein, with carbohydrate-rich staples for the stated endurance goal. This plan uses no dairy, peanut, or tree-nut ingredients.`,
+    explanation: "Shows a different restriction case: use soy alternatives rather than dairy or nut-based substitutes. Keeps the same concise schedule, gram portions, estimated totals, and goal-specific explanation. It does not invent a budget. Food nutrient estimates are not verified.",
+  },
+];
+
 const inputSchema = {
   type: "object",
   properties: {
@@ -100,7 +142,44 @@ ${buildAthleteInformation(inputs, escapeXmlText)}
 ${outputGuidelines}`;
 }
 
-export function selectExperiment(name = "xml-tags") {
+export function buildExamplesPrompt(inputs, count = 1) {
+  if (!Number.isInteger(count) || count < 1 || count > promptExamples.length) {
+    throw new Error(`Example count must be from 1 to ${promptExamples.length}.`);
+  }
+  const examples = promptExamples.slice(0, count).map((example) => `<example>
+<sample_input>
+${buildAthleteInformation(example.inputs, escapeXmlText)}
+</sample_input>
+<ideal_output>
+${escapeXmlText(example.output)}
+</ideal_output>
+<why_this_is_good>
+${escapeXmlText(example.explanation)}
+</why_this_is_good>
+</example>`).join("\n\n");
+  return `${buildXmlPrompt(inputs)}
+
+Here are ${count} example input/output pairs showing the desired response format.
+These are hand-written illustrations, not scored model outputs or verified nutrition plans.
+<examples>
+${examples}
+</examples>
+Use the examples as format and style guidance. Generate a new plan for the current athlete in the athlete_information section, not for the sample athletes. Adapt foods and portions to the current inputs rather than copying the samples.`;
+}
+
+export function assertNoExampleOverlap(dataset, examples) {
+  const signature = (inputs) => JSON.stringify(["height", "weight", "goal", "restrictions"].map(
+    (key) => String(inputs[key]).trim().toLowerCase()
+  ));
+  const sampleInputs = new Set(examples.map((example) => signature(example.inputs)));
+  for (const [index, inputs] of dataset.entries()) {
+    if (sampleInputs.has(signature(inputs))) {
+      throw new Error(`Evaluation case ${index + 1} duplicates a prompt example. Use separate evaluation inputs.`);
+    }
+  }
+}
+
+export function selectExperiment(name = "providing-examples") {
   if (name === "clear-and-direct") {
     return {
       details: {
@@ -133,6 +212,21 @@ export function selectExperiment(name = "xml-tags") {
     buildBaselinePrompt: buildImprovedPrompt,
     buildCandidatePrompt: buildXmlPrompt,
   };
+  if (name === "providing-examples" || name === "multi-shot") {
+    const count = name === "multi-shot" ? 2 : 1;
+    return {
+      details: {
+        technique: count === 1 ? "Providing examples: one-shot" : "Providing examples: multi-shot",
+        change: `Keep the XML prompt; append ${count} labeled input/output examples and explain their useful qualities. Keep evaluation inputs and the rubric unchanged.`,
+        baselineLabel: "XML prompt without examples",
+        improvedLabel: `XML prompt with ${count} example${count === 1 ? "" : "s"}`,
+        exampleCount: count,
+        exampleSource: "Hand-written teaching fixtures; not selected from scored model outputs.",
+      },
+      buildBaselinePrompt: buildXmlPrompt,
+      buildCandidatePrompt: (inputs) => buildExamplesPrompt(inputs, count),
+    };
+  }
   throw new Error(`Unknown experiment: ${name}.`);
 }
 
@@ -306,19 +400,19 @@ ${sections}</body></html>`;
 async function main() {
   const flags = new Set(process.argv.slice(2));
   for (const flag of flags) {
-    if (!["--preview", "--generate-dataset", "--clear-and-direct", "--being-specific", "--xml-tags", "--help"].includes(flag)) {
+    if (!["--preview", "--generate-dataset", "--clear-and-direct", "--being-specific", "--xml-tags", "--providing-examples", "--multi-shot", "--help"].includes(flag)) {
       throw new Error(`Unknown option: ${flag}. Use --help.`);
     }
   }
   if (flags.has("--help")) {
-    console.log("Usage: npm run lesson:07 -- [--preview] [--generate-dataset] [--xml-tags | --being-specific | --clear-and-direct]\nDefault: compare the specific prompt with and without XML athlete-information tags, saving JSON/HTML reports.\n--preview: show the selected prompts and rubric without API calls or file writes.\n--generate-dataset: replace only this lesson's saved test cases before evaluation.\n--xml-tags: explicitly select the default XML-tag experiment.\n--being-specific: revisit the output-guidelines experiment.\n--clear-and-direct: revisit the vague-versus-direct opening experiment.");
+    console.log("Usage: npm run lesson:07 -- [--preview] [--generate-dataset] [--providing-examples | --multi-shot | --xml-tags | --being-specific | --clear-and-direct]\nDefault: compare the XML prompt with and without one example, saving JSON/HTML reports.\n--preview: show the selected prompts and rubric without API calls or file writes.\n--generate-dataset: replace only this lesson's saved test cases before evaluation.\n--providing-examples: explicitly select the default one-shot experiment.\n--multi-shot: compare the XML prompt against the same prompt with two examples.\n--xml-tags: revisit the XML-tag experiment.\n--being-specific: revisit the output-guidelines experiment.\n--clear-and-direct: revisit the vague-versus-direct opening experiment.");
     return;
   }
-  const experimentFlags = ["--xml-tags", "--being-specific", "--clear-and-direct"].filter((flag) => flags.has(flag));
+  const experimentFlags = ["--providing-examples", "--multi-shot", "--xml-tags", "--being-specific", "--clear-and-direct"].filter((flag) => flags.has(flag));
   if (experimentFlags.length > 1) {
-    throw new Error("Choose only one experiment: --xml-tags, --being-specific, or --clear-and-direct.");
+    throw new Error("Choose only one experiment: --providing-examples, --multi-shot, --xml-tags, --being-specific, or --clear-and-direct.");
   }
-  const experimentName = experimentFlags[0]?.slice(2) ?? "xml-tags";
+  const experimentName = experimentFlags[0]?.slice(2) ?? "providing-examples";
   const { details: experiment, buildBaselinePrompt, buildCandidatePrompt } = selectExperiment(experimentName);
   console.log("Lesson 07: Prompt Engineering\n");
   console.log("Goal -> baseline prompt -> evaluate -> apply one technique -> re-evaluate\n");
@@ -349,6 +443,10 @@ async function main() {
     console.log("Generating three synthetic athlete test cases...");
     dataset = await evaluator.generateDataset(settings.numCases);
     await writeFile(datasetFile, JSON.stringify(dataset, null, 2));
+  }
+
+  if (experiment.exampleCount) {
+    assertNoExampleOverlap(dataset, promptExamples.slice(0, experiment.exampleCount));
   }
 
   console.log(`Evaluating the baseline: ${experiment.baselineLabel}...`);

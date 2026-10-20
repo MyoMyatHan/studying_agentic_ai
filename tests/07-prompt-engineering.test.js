@@ -8,6 +8,9 @@ import {
   buildClearAndDirectPrompt,
   buildImprovedPrompt,
   buildXmlPrompt,
+  buildExamplesPrompt,
+  promptExamples,
+  assertNoExampleOverlap,
   selectExperiment,
   validateDataset,
   validateGrade,
@@ -60,8 +63,9 @@ test("comparison uses the same inputs and never exceeds configured concurrency",
       return `Fake answer to ${prompt}`;
     },
   });
-  const baseline = await evaluator.runEvaluation(dataset, buildImprovedPrompt);
-  const improved = await evaluator.runEvaluation(dataset, buildXmlPrompt);
+  const { buildBaselinePrompt, buildCandidatePrompt } = selectExperiment();
+  const baseline = await evaluator.runEvaluation(dataset, buildBaselinePrompt);
+  const improved = await evaluator.runEvaluation(dataset, buildCandidatePrompt);
   assert.equal(calls, 12);
   assert.equal(peak, 2);
   assert.equal(baseline.average, 5);
@@ -70,18 +74,22 @@ test("comparison uses the same inputs and never exceeds configured concurrency",
   assert.deepEqual(improved.results.map((item) => item.inputs), dataset);
   assert.deepEqual(baseline.results.map((item) => item.case), [1, 2, 3]);
   for (const [index, item] of improved.results.entries()) {
-    const withoutTags = item.prompt.replace("<athlete_information>\n", "").replace("\n</athlete_information>", "");
-    assert.equal(withoutTags, baseline.results[index].prompt, "Only the athlete-information wrappers should change");
+    assert.ok(item.prompt.startsWith(`${baseline.results[index].prompt}\n\n`), "Adding an example must preserve the XML prompt");
+    assert.equal(item.prompt.match(/<sample_input>/g).length, 1);
   }
 });
 
 test("experiment selection preserves the previous comparison and isolates guidelines", () => {
   const earlier = selectExperiment("clear-and-direct");
   const specific = selectExperiment("being-specific");
+  const xml = selectExperiment("xml-tags");
   const current = selectExperiment();
   assert.equal(earlier.details.technique, "Being clear and direct");
   assert.equal(specific.details.technique, "Being specific: output quality guidelines");
-  assert.equal(current.details.technique, "Structure with XML tags");
+  assert.equal(xml.details.technique, "Structure with XML tags");
+  assert.equal(current.details.technique, "Providing examples: one-shot");
+  assert.equal(current.details.exampleCount, 1);
+  assert.equal(selectExperiment("multi-shot").details.exampleCount, 2);
   assert.throws(() => selectExperiment("unknown"), /Unknown experiment/);
   for (const inputs of dataset) {
     const vague = earlier.buildBaselinePrompt(inputs).split("\n");
@@ -97,8 +105,43 @@ test("experiment selection preserves the previous comparison and isolates guidel
     assert.match(guidelinesPrompt, /foods and ingredients that meet all dietary restrictions/);
     assert.match(guidelinesPrompt, /every food's portion size in grams/);
     assert.match(guidelinesPrompt, /budget-friendly if a budget or affordability goal is mentioned; do not invent a budget/);
-    assert.equal(current.buildBaselinePrompt(inputs), guidelinesPrompt, "XML builds on the specificity candidate");
-    assert.equal(current.buildCandidatePrompt(inputs), buildXmlPrompt(inputs));
+    assert.equal(xml.buildBaselinePrompt(inputs), guidelinesPrompt, "XML builds on the specificity candidate");
+    const xmlPrompt = xml.buildCandidatePrompt(inputs);
+    assert.equal(xmlPrompt.replace("<athlete_information>\n", "").replace("\n</athlete_information>", ""), guidelinesPrompt);
+    assert.equal(current.buildBaselinePrompt(inputs), xmlPrompt, "Examples build on the XML candidate");
+    assert.equal(current.buildCandidatePrompt(inputs), buildExamplesPrompt(inputs));
+  }
+});
+
+test("one-shot and multi-shot examples are labeled and separate from evaluation cases", () => {
+  const one = buildExamplesPrompt(dataset[0]);
+  const two = selectExperiment("multi-shot").buildCandidatePrompt(dataset[0]);
+  assert.equal(one.match(/<example>/g).length, 1);
+  assert.equal(two.match(/<example>/g).length, 2);
+  for (const prompt of [one, two]) {
+    assert.equal(prompt.match(/<athlete_information>/g).length, 1, "Keep the current athlete separate from sample inputs");
+    assert.match(prompt, /<sample_input>[\s\S]*<\/sample_input>/);
+    assert.match(prompt, /<ideal_output>[\s\S]*<\/ideal_output>/);
+    assert.match(prompt, /<why_this_is_good>[\s\S]*<\/why_this_is_good>/);
+    assert.match(prompt, /hand-written illustrations, not scored model outputs/);
+    assert.match(prompt, /not for the sample athletes/);
+  }
+  assertNoExampleOverlap(dataset, promptExamples);
+  assert.throws(() => assertNoExampleOverlap([promptExamples[0].inputs], promptExamples), /duplicates a prompt example/);
+  assert.throws(() => buildExamplesPrompt(dataset[0], 0), /Example count/);
+  assert.throws(() => buildExamplesPrompt(dataset[0], 3), /Example count/);
+});
+
+test("teaching examples have internally consistent illustrative daily totals", () => {
+  for (const example of promptExamples) {
+    const meals = [...example.output.matchAll(/Estimated meal total: (\d+) kcal; protein (\d+) g, carbohydrate (\d+) g, fat (\d+) g\./g)];
+    const daily = example.output.match(/Daily estimated total: (\d+) kcal; protein (\d+) g, carbohydrate (\d+) g, fat (\d+) g\./);
+    assert.equal(meals.length, 4);
+    assert.ok(daily);
+    for (let field = 1; field <= 4; field++) {
+      assert.equal(meals.reduce((sum, meal) => sum + Number(meal[field]), 0), Number(daily[field]));
+    }
+    assert.equal(Number(daily[1]), 4 * Number(daily[2]) + 4 * Number(daily[3]) + 9 * Number(daily[4]));
   }
 });
 
@@ -180,12 +223,22 @@ test("CLI preview needs no key, and CLI errors return failing exit codes", () =>
   assert.equal(preview.status, 0, preview.stderr);
   assert.match(preview.stdout, /BASELINE PROMPT/);
   assert.match(preview.stdout, /IMPROVED PROMPT/);
-  assert.match(preview.stdout, /Technique: Structure with XML tags/);
+  assert.match(preview.stdout, /Technique: Providing examples: one-shot/);
+  assert.match(preview.stdout, /<sample_input>/);
+  assert.equal(preview.stdout.match(/<ideal_output>/g).length, 1);
   assert.match(preview.stdout, /<athlete_information>\n- Height:/);
   assert.match(preview.stdout, /<\/athlete_information>\n\nGuidelines:/);
   assert.match(preview.stdout, /Guidelines:/);
   assert.match(preview.stdout, /Generate a one-day meal plan for an athlete that meets their dietary restrictions\./);
   assert.match(preview.stdout, /no scores were generated/);
+  const multi = run("--multi-shot", "--preview");
+  assert.equal(multi.status, 0, multi.stderr);
+  assert.match(multi.stdout, /Technique: Providing examples: multi-shot/);
+  assert.equal(multi.stdout.match(/<ideal_output>/g).length, 2);
+  const xml = run("--xml-tags", "--preview");
+  assert.equal(xml.status, 0, xml.stderr);
+  assert.match(xml.stdout, /Technique: Structure with XML tags/);
+  assert.doesNotMatch(xml.stdout, /<sample_input>/);
   const specificity = run("--being-specific", "--preview");
   assert.equal(specificity.status, 0, specificity.stderr);
   assert.match(specificity.stdout, /Technique: Being specific: output quality guidelines/);

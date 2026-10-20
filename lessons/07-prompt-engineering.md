@@ -5,7 +5,89 @@ actually helps. This lesson adapts your course's meal-plan example to the
 repository's Node.js and Gemini setup. It implements a small `PromptEvaluator`
 locally; no external evaluator package or notebook is required.
 
-## Current episode: structure with XML tags
+## Current episode: providing examples
+
+Examples demonstrate the response pattern instead of describing it only in
+words. A sample input paired with a useful output can show the desired format,
+tone, level of detail, or handling of a difficult case.
+
+| Mode | Baseline | Candidate |
+| --- | --- | --- |
+| Default one-shot | The XML prompt without examples. | The exact same prompt plus one input/output example. |
+| `--multi-shot` | The XML prompt without examples. | The exact same prompt plus two input/output examples. |
+
+Both modes keep the current athlete inputs, task, guidelines, and grader rubric
+fixed. Multi-shot is another comparison against no examples; its score change
+does not directly measure improvement over one-shot. More examples also mean
+more input tokens; they do not guarantee better scores.
+
+### How the examples are structured
+
+`promptExamples` contains two hand-written teaching fixtures. One illustrates
+vegetarian, peanut-free choices on a limited budget. The other illustrates
+vegan, dairy-free choices without peanut or tree-nut ingredients. Each contains
+`inputs`, an `output`, and a short `explanation` of its useful qualities.
+
+`buildExamplesPrompt()` appends the selected fixtures to `buildXmlPrompt()`:
+
+```xml
+<examples>
+<example>
+<sample_input>
+...sample athlete height, weight, goal, and restrictions...
+</sample_input>
+<ideal_output>
+...example meal schedule, gram portions, estimated totals, and goal alignment...
+</ideal_output>
+<why_this_is_good>
+...which output qualities this example demonstrates...
+</why_this_is_good>
+</example>
+</examples>
+```
+
+The excerpts above describe the layout; use preview to read the complete
+examples. Example contents are XML-escaped, and the current athlete stays in
+the separate `athlete_information` section. The final instruction asks for a
+new answer adapted to the current inputs, rather than a copied sample plan.
+
+The tag name `ideal_output` identifies the target response pattern. These
+fixtures are not claimed to be model-scored, perfect, or nutritionally verified.
+Their illustrative meal totals add to their daily totals, and the macro/calorie
+arithmetic is consistent; that does not verify nutrients for the listed foods.
+Report metadata records the example count and their hand-written origin.
+
+### One-shot versus multi-shot
+
+One-shot provides one pair to establish a pattern. Multi-shot provides several
+pairs to cover different cases. Choose examples relevant to the actual task:
+restriction conflicts for meal planning, sarcasm for sentiment classification,
+or missing fields for a JSON extraction task. A sentiment example inside a
+meal-planning prompt would not demonstrate the required response format.
+
+### Choosing examples from evaluation reports
+
+1. Run development evaluations and inspect `results.json` or the HTML report.
+   Find successful cases with strong scores and useful feedback.
+2. Review their answers manually against the rubric. A model-assigned 10/10
+   is a candidate for review, not proof of correctness.
+3. Copy the selected result's `inputs` and `answer` into a `promptExamples`
+   entry's `inputs` and `output`. Write a concise `explanation` stating why
+   it is useful. Prefer examples addressing recurring failures.
+   If you replace the teaching fixtures with evaluated answers, update the
+   provenance wording in `buildExamplesPrompt()` and `selectExperiment()` too.
+4. Keep those demonstration inputs outside your evaluation dataset. Use
+   separate held-out cases for final validation, including similar corner
+   cases with different inputs. Do not tune examples on that final test set.
+5. Re-evaluate both prompt versions on the same cases and compare their
+   answers, not only the average score.
+
+Before generating evaluated answers, the lesson checks selected examples
+against the saved dataset and rejects exact duplicate input profiles (ignoring
+case and outer whitespace). It does not detect paraphrases or near-duplicates,
+so review the split yourself when replacing examples.
+
+## Previous episode: structure with XML tags
 
 This experiment keeps the specific prompt's opening and six guidelines, then
 wraps the four athlete-data lines in a descriptive tag pair. It tests whether
@@ -122,7 +204,7 @@ identical, so the comparison isolates the opening-line change.
 Select this earlier experiment with `--clear-and-direct`. It has no appended
 guidelines: only the first line changes. Its improved prompt becomes the
 baseline for the specificity experiment. The shared rubric still checks
-calories, macros, portions/timing, restrictions, and fit in all three experiments.
+calories, macros, portions/timing, restrictions, and fit in all experiment modes.
 
 Your course reports a change from 2.32 to 3.92 in its example. Those are course
 results, not measured results from this Gemini lesson. Run the evaluation to
@@ -155,7 +237,7 @@ From the repository root, install dependencies with `npm ci` if needed. Live
 runs use the existing local `.env` variable `GEMINI_API_KEY`.
 
 ```bash
-# Preview the specific prompt versus the same prompt with XML athlete tags.
+# Preview the XML prompt versus that same prompt with one example.
 npm run lesson:07 -- --preview
 
 # Generate cases on the first run, then compare the two prompts.
@@ -163,6 +245,14 @@ npm run lesson:07
 
 # Explicitly replace this lesson's cases and start a new comparison.
 npm run lesson:07 -- --generate-dataset
+
+# Compare the XML prompt with two examples (preview or live).
+npm run lesson:07 -- --multi-shot --preview
+npm run lesson:07 -- --multi-shot
+
+# Revisit the XML-tag experiment (preview or live).
+npm run lesson:07 -- --xml-tags --preview
+npm run lesson:07 -- --xml-tags
 
 # Revisit the output-guidelines experiment (preview or live).
 npm run lesson:07 -- --being-specific --preview
@@ -173,7 +263,7 @@ npm run lesson:07 -- --clear-and-direct --preview
 npm run lesson:07 -- --clear-and-direct
 ```
 
-`--xml-tags` explicitly selects the default experiment. Choose at most one
+`--providing-examples` explicitly selects the default one-shot experiment. Choose at most one
 experiment flag; each can be combined with `--preview` or `--generate-dataset`.
 Preview takes precedence over dataset generation and writes no files.
 
@@ -184,7 +274,8 @@ case count, explicitly regenerate the dataset or provide a matching saved one.
 
 A first run with three cases makes 13 application-level Gemini requests:
 one for dataset generation, then six for each prompt (three answers and three
-grades). Later runs reuse the dataset and make 12. Failed calls or SDK-level
+grades). Later runs reuse the dataset and make 12. Examples are stored locally
+and add input tokens without adding model calls. Failed calls or SDK-level
 retries can change actual usage. Concurrency limits in-flight case workers,
 not requests per minute; each worker generates then grades sequentially.
 
@@ -198,25 +289,25 @@ not requests per minute; each worker generates then grades sequentially.
    `restrictions`. JSON schema guides generation; local checks validate the
    number of cases, numeric ranges, and non-empty strings before saving.
 3. **Establish the baseline.** `selectExperiment()` chooses the prompt pair.
-   By default, `buildImprovedPrompt()` supplies the specific prompt as the
-   baseline. `--being-specific` uses `buildClearAndDirectPrompt()` as its
-   baseline, and `--clear-and-direct` uses the vague `buildInitialPrompt()`.
-   The grader sees the same rubric in all three experiments.
+   By default and with `--multi-shot`, `buildXmlPrompt()` supplies the baseline.
+   `--xml-tags` uses the specific `buildImprovedPrompt()` as its baseline.
+   `--being-specific` starts with `buildClearAndDirectPrompt()`, and
+   `--clear-and-direct` starts with the vague `buildInitialPrompt()`.
+   The grader sees the same rubric in all experiment modes.
 4. **Evaluate it.** `runEvaluation()` generates one answer per case, then uses
    a separate Gemini request to grade that answer against the fixed rubric.
    It validates grader JSON and computes the total locally. The grade includes
    short feedback you can act on.
-5. **Apply a technique.** The default candidate, `buildXmlPrompt()`, wraps
-   athlete data while retaining the baseline opening and guidelines. The
-   specificity candidate, `buildImprovedPrompt()`, adds the guidelines. The
-   clear-and-direct candidate changes only the opening. Process steps are
-   still a separate possible experiment.
+5. **Apply a technique.** The default candidate, `buildExamplesPrompt()`, appends
+   one sample input/output pair and an explanation. Multi-shot appends two.
+   The earlier candidates wrap athlete data, add output guidelines, or replace
+   the opening question, respectively. Process steps remain a separate experiment.
 6. **Re-evaluate fairly.** Both versions use the same saved cases, rubric,
    model, temperature (0), and token limit. Compare averages and individual
    cases, then inspect the actual answers and feedback.
 7. **Repeat.** Make one change to the selected candidate, run again, and
    compare the saved reports. Keep the dataset and rubric unchanged during
-   the experiment. Shared formatter/guideline edits affect both XML versions;
+   the experiment. Shared formatter/guideline edits affect both example versions;
    preserve the baseline when testing a new candidate instruction.
 
 The course's additional evaluation criteria are represented here by the
@@ -244,7 +335,8 @@ comparison has no score change. The command exits with an error in that case.
 Earlier successful reports are preserved.
 
 The JSON report's `experiment` field records the technique, the change, and
-labels for both prompt versions. Each case retains its exact prompt. The HTML
+labels for both prompt versions. Example experiments also record the example
+count and source. Each case retains its exact prompt, including sample content. The HTML
 report uses those labels and includes the same metadata under
 "Experiment, fixed rubric, and run settings" so you can identify this episode
 when reviewing reports later. Older reports remain as they were; use each
@@ -266,13 +358,16 @@ new run's paired comparison rather than assuming old scores are comparable.
 
 ## Small exercises for your next review
 
-1. Preview the default experiment and check that only athlete-data tags are added.
+1. Preview the default experiment and check that the XML baseline stays intact
+   while one labeled example and its explanatory context are appended.
 2. Run once, then inspect the lowest-scoring case in the HTML report.
 3. Change one instruction to address its feedback and run again.
 4. Record the change, old/new averages, and whether other cases got worse.
 5. Check a fresh dataset only after you finish tuning on the original one.
 6. Use `--clear-and-direct --preview` to review the earlier opening-line change.
 7. Use `--being-specific --preview` to review the addition of output guidelines.
+8. Use `--xml-tags --preview` to review context boundaries, and use
+   `--multi-shot --preview` to inspect both sample pairs.
 
 ## Offline checks and references
 
