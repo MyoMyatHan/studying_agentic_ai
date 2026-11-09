@@ -30,6 +30,12 @@ earlier lessons remain useful for review. There is no web app or build step.
 | `tests/07-prompt-engineering.test.js` | Offline evaluation-pipeline checks using fake Gemini responses. |
 | `lessons/08-tool-functions-and-schemas.js` / `.md` | UTC clock/duration and local reminder tools, schemas/router, multi-turn loop, and offline previews/list/check commands. |
 | `tests/08-tool-functions-and-schemas.test.js` | Offline tool flow, persistence/retries in temporary stores, date arithmetic, error handling, and finish-reason checks. |
+| `lessons/09-batch-tool.js` / `.md` | Batch independent read-only shop lookups with ordered results, per-invocation errors, and offline preview. |
+| `tests/09-batch-tool.test.js` | Offline batch validation, result pairing, follow-up history, and request-limit checks. |
+| `lessons/10-tools-for-structured-data.js` / `.md` | Extract an event using a forced function call and validate arguments; no tool execution or file writes. |
+| `tests/10-tools-for-structured-data.test.js` | Offline extraction, invalid-record, response-completeness, and forced-call configuration checks. |
+| `lessons/11-streaming-tool-calls.js` / `.md` | Stream text, preserve complete tool parts, validate after stream completion, and stream follow-up answers. |
+| `tests/11-streaming-tool-calls.test.js` | Offline chunk delivery, signatures, tool timing/results, interruptions, and loop-limit checks. |
 | `output/lesson-08/reminders.json` | Generated local reminders; Git-ignored. Save only for user reminder requests; preserve existing records. |
 | `test.js` | Standalone interactive chatbot example, not an automated test. |
 | `dataset.json` | Generated lesson output; preserve existing content unless regeneration is part of the request. |
@@ -77,11 +83,20 @@ remain a separate possible experiment. The walkthrough describes each mode.
 | `npm run lesson:08 -- --list-reminders` | List saved local reminders without an API key or file changes. |
 | `npm run lesson:08 -- --check-reminders` | Display due reminders without an API key or file changes. No background notifications. |
 | `node --test tests/08-tool-functions-and-schemas.test.js` | Run lesson 08's offline tests. |
+| `npm run lesson:09 -- --preview` | Display the batch schema and fixture exchange without API calls or file writes. |
+| `npm run lesson:09` | Chat with Gemini using a batch tool for fictional shop lookups; type `exit` to quit. |
+| `node --test tests/09-batch-tool.test.js` | Run lesson 09's offline tests. |
+| `npm run lesson:10 -- --preview` | Display the extraction schema and validated fixture without API calls or files. |
+| `npm run lesson:10` | Extract one event per input line using Gemini; type `exit` to quit. |
+| `node --test tests/10-tools-for-structured-data.test.js` | Run lesson 10's offline tests. |
+| `npm run lesson:11 -- --preview` | Run fixture chunks through the real stream/tool loop without API calls or files. |
+| `npm run lesson:11` | Chat with Gemini using streaming and a read-only word-count tool; type `exit` to quit. |
+| `node --test tests/11-streaming-tool-calls.test.js` | Run lesson 11's offline tests. |
 | `node --check lessons/01-gemini-chat.js` | Check JavaScript syntax without executing the lesson; substitute the file being changed. |
 | `git diff --check` | Check tracked changes for whitespace errors. |
 
 `npm test` is a placeholder that exits with an error. There are no configured
-lint, format, or build scripts. Lessons 07 and 08 have targeted offline tests
+lint, format, or build scripts. Lessons 07 through 11 have targeted offline tests
 runnable with the explicit commands above; `npm test` does not run them.
 
 ## Implementation conventions
@@ -134,8 +149,9 @@ runnable with the explicit commands above; `npm test` does not run them.
 - For documentation edits, verify referenced paths, commands, and relative
   links against the repository. Run `git diff --check` before finishing.
 - Earlier lesson files execute `main()` on import and may call the API. Do not
-  import them as a test. Lessons 07 and 08 have CLI guards and support safe
-  imports for their offline tests. Syntax checks do not need a key or network access.
+  import them as a test. Lessons 07 through 11 have CLI guards and support safe
+  imports for their offline tests.
+  Syntax checks do not need a key or network access.
 - Use live requests only when needed for the task; they send prompts to Gemini
   and can consume quota. Avoid regenerating `dataset.json` merely to validate
   an unrelated change. Its prompt requests three objects with a string `task`
@@ -145,7 +161,7 @@ runnable with the explicit commands above; `npm test` does not run them.
   or the generated dataset's shape. Do not expect identical model responses.
 - Lessons 01-06 end with `main().catch(console.error)`. An API error may be
   printed without a failing exit code, so inspect output when checking a run.
-  Lessons 07 and 08 set a failing exit code for CLI errors; lesson 07 also does
+  Lessons 07 through 11 set a failing exit code for CLI errors; lesson 07 also does
   so for incomplete evaluations.
 - Finish with a concise account of changed files, validation performed, and
   any checks that could not be run. Provide the relevant lesson command when

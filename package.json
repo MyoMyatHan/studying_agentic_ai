@@ -13,6 +13,9 @@
     "lesson:06": "node lessons/06-prompt-evaluation-dataset.js",
     "lesson:07": "node lessons/07-prompt-engineering.js",
     "lesson:08": "node lessons/08-tool-functions-and-schemas.js",
+    "lesson:09": "node lessons/09-batch-tool.js",
+    "lesson:10": "node lessons/10-tools-for-structured-data.js",
+    "lesson:11": "node lessons/11-streaming-tool-calls.js",
     "start": "node lessons/01-gemini-chat.js"
   },
   "keywords": [],
